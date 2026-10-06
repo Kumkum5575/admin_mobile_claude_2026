@@ -23,8 +23,16 @@ export default function App() {
   const load = useCallback(async () => {
     setLoading(true);
     try {
-      setMobiles(await getMobiles());
+      const data = await getMobiles();
+      // Yahan check kar rahe hain ki API se array mila ya nahi
+      if (Array.isArray(data)) {
+        setMobiles(data);
+      } else {
+        setMobiles([]);
+        notify("API did not return a list of mobiles", "err");
+      }
     } catch (err) {
+      setMobiles([]);
       notify(errorMessage(err), "err");
     } finally {
       setLoading(false);
@@ -35,9 +43,15 @@ export default function App() {
     load();
   }, [load]);
 
-  const brands = useMemo(() => [...new Set(mobiles.map((m) => m.brand))].sort(), [mobiles]);
+  // SAFE: Ab agar mobiles array nahi hoga, toh app crash nahi karega
+  const brands = useMemo(() => {
+    if (!Array.isArray(mobiles)) return [];
+    return [...new Set(mobiles.map((m) => m.brand))].sort();
+  }, [mobiles]);
 
+  // SAFE: Filter logic ko crash hone se bachane ke liye check lagaya
   const visible = useMemo(() => {
+    if (!Array.isArray(mobiles)) return [];
     const q = search.trim().toLowerCase();
     return mobiles.filter(
       (m) =>
@@ -46,14 +60,17 @@ export default function App() {
     );
   }, [mobiles, search, brand]);
 
-  const stats = useMemo(
-    () => ({
+  // SAFE: Stats logic mein safe calculation lagayi
+  const stats = useMemo(() => {
+    if (!Array.isArray(mobiles)) {
+      return { models: 0, units: 0, value: 0 };
+    }
+    return {
       models: mobiles.length,
-      units: mobiles.reduce((s, m) => s + m.stock, 0),
-      value: mobiles.reduce((s, m) => s + m.stock * m.price, 0),
-    }),
-    [mobiles]
-  );
+      units: mobiles.reduce((s, m) => s + (m.stock || 0), 0),
+      value: mobiles.reduce((s, m) => s + (m.stock || 0) * (m.price || 0), 0),
+    };
+  }, [mobiles]);
 
   const openAdd = () => {
     setEditing(null);
@@ -73,11 +90,13 @@ export default function App() {
     try {
       if (editing) {
         const updated = await updateMobile(editing._id, data);
-        setMobiles((list) => list.map((m) => (m._id === updated._id ? updated : m)));
+        setMobiles((list) => 
+          Array.isArray(list) ? list.map((m) => (m._id === updated._id ? updated : m)) : []
+        );
         notify("Changes saved");
       } else {
         const created = await createMobile(data);
-        setMobiles((list) => [created, ...list]);
+        setMobiles((list) => Array.isArray(list) ? [created, ...list] : [created]);
         notify("Mobile added");
       }
       closeForm();
@@ -92,7 +111,7 @@ export default function App() {
     setBusy(true);
     try {
       await deleteMobile(toDelete._id);
-      setMobiles((list) => list.filter((m) => m._id !== toDelete._id));
+      setMobiles((list) => Array.isArray(list) ? list.filter((m) => m._id !== toDelete._id) : []);
       notify("Mobile deleted");
       setToDelete(null);
     } catch (err) {
@@ -137,8 +156,8 @@ export default function App() {
         <p className="state">Loading mobiles…</p>
       ) : visible.length === 0 ? (
         <div className="state empty">
-          <p>{mobiles.length === 0 ? "No mobiles in the store yet." : "No mobiles match your search."}</p>
-          {mobiles.length === 0 && <button className="btn primary" onClick={openAdd}>Add your first mobile</button>}
+          <p>{!Array.isArray(mobiles) || mobiles.length === 0 ? "No mobiles in the store yet." : "No mobiles match your search."}</p>
+          {(!Array.isArray(mobiles) || mobiles.length === 0) && <button className="btn primary" onClick={openAdd}>Add your first mobile</button>}
         </div>
       ) : (
         <main className="list">
